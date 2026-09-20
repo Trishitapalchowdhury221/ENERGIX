@@ -1,0 +1,107 @@
+{
+  "training_timestamp": "2026-09-19 14:21:32",
+  "algorithm": "XGBoost (XGBRegressor)",
+  "train_samples": 6988,
+  "test_samples": 1748,
+  "train_date_range": [
+    "2019-01-02 00:00:00",
+    "2019-10-20 03:00:00"
+  ],
+  "test_date_range": [
+    "2019-10-20 04:00:00",
+    "2019-12-31 23:00:00"
+  ],
+  "pv_features": [
+    "hour",
+    "minute",
+    "day_of_year",
+    "month",
+    "sin_hour",
+    "cos_hour",
+    "solar_irradiance",
+    "ambient_temperature",
+    "module_temperature",
+    "humidity",
+    "cloud_cover",
+    "pv_lag_1",
+    "pv_lag_2",
+    "pv_lag_4",
+    "pv_lag_96",
+    "pv_rolling_mean_4",
+    "pv_rolling_std_4"
+  ],
+  "wind_features": [
+    "hour",
+    "minute",
+    "day_of_year",
+    "month",
+    "wind_speed",
+    "wind_speed_cubed",
+    "sin_wind_dir",
+    "cos_wind_dir",
+    "ambient_temperature",
+    "humidity",
+    "wind_lag_1",
+    "wind_lag_2",
+    "wind_lag_4",
+    "wind_lag_96",
+    "wind_rolling_mean_4",
+    "wind_rolling_std_4"
+  ],
+  "metrics": {
+    "pv": {
+      "mae": 0.0019,
+      "rmse": 0.004,
+      "r2": 0.9996
+    },
+    "wind": {
+      "mae": 0.0133,
+      "rmse": 0.0223,
+      "r2": 0.9589
+    },
+    "total": {
+      "mae": 0.014,
+      "rmse": 0.0228,
+      "r2": 0.9901
+    }
+  },
+  "feature_importances": {
+    "pv": {
+      "solar_irradiance": 1.8403032698233184,
+      "cos_hour": 0.0037695658580995774,
+      "module_temperature": 0.001979358920194274,
+      "pv_lag_96": 0.0011191355082912136,
+      "hour": 0.0002649944925280145,
+      "cloud_cover": 0.00023507906559716574,
+      "pv_lag_1": 0.00016450030868839783,
+      "pv_lag_2": 3.462401211717925e-05,
+      "pv_rolling_mean_4": 3.4299436087947835e-05,
+      "ambient_temperature": 2.5116405533620602e-05,
+      "pv_rolling_std_4": 1.4142326804567062e-05,
+      "humidity": 1.402506862824282e-06,
+      "pv_lag_4": 6.291808447578262e-08,
+      "minute": 0.0,
+      "day_of_year": 0.0,
+      "month": 0.0,
+      "sin_hour": -1.1480609812819509e-06
+    },
+    "wind": {
+      "wind_lag_1": 2.6711968845777783,
+      "wind_lag_2": 0.23461791378998811,
+      "wind_rolling_mean_4": 0.013767734423040556,
+      "hour": 0.00445123967153509,
+      "ambient_temperature": 0.003253132073094167,
+      "wind_lag_96": 0.0011820577505870845,
+      "wind_lag_4": 0.0005709029867191129,
+      "humidity": 0.00026892344325235573,
+      "wind_speed": 9.734147237363543e-05,
+      "wind_speed_cubed": 4.4640316710498064e-05,
+      "sin_wind_dir": 3.583548499226374e-05,
+      "cos_wind_dir": 5.035280245935247e-06,
+      "minute": 0.0,
+      "day_of_year": 0.0,
+      "month": 0.0,
+      "wind_rolling_std_4": -8.789961476349806e-05
+    }
+  }
+}
