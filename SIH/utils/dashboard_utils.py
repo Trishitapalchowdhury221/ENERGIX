@@ -628,12 +628,13 @@ def create_actual_vs_predicted_charts(
     wind_model: Any,
     pv_features: List[str],
     wind_features: List[str],
-) -> Tuple[go.Figure, go.Figure, go.Figure]:
+) -> Tuple[go.Figure, go.Figure, go.Figure, go.Figure]:
     """
     Renders Section 17 Actual vs Predicted plots:
-    1. Time series comparison of test set
+    1. Time series comparison of test set (PV + Wind)
     2. Regression scatter plot with ideal 1:1 line
     3. Residual distribution histogram
+    4. Total combined energy generation: Actual vs Predicted time series
     """
         # Use the full date-filtered range passed in (already scoped by the
     # date picker upstream). Cap only if extremely large, to keep rendering fast.
@@ -771,7 +772,52 @@ def create_actual_vs_predicted_charts(
         height=380,
     )
 
-    return fig_ts, fig_scatter, fig_resid
+    fig_total = _build_total_actual_vs_predicted_chart(
+        sample_df, y_test_pv, y_pred_pv, y_test_wind, y_pred_wind
+    )
+
+    return fig_ts, fig_scatter, fig_resid, fig_total
+
+
+def _build_total_actual_vs_predicted_chart(
+    sample_df: pd.DataFrame, y_test_pv: np.ndarray, y_pred_pv: np.ndarray,
+    y_test_wind: np.ndarray, y_pred_wind: np.ndarray,
+) -> go.Figure:
+    y_test_total = y_test_pv + y_test_wind
+    y_pred_total = y_pred_pv + y_pred_wind
+
+    fig_total = go.Figure()
+    fig_total.add_trace(
+        go.Scatter(
+            x=sample_df["timestamp"],
+            y=y_test_total,
+            name="Actual Total Generation",
+            line=dict(color=COLOR_TOTAL, width=2.5),
+        )
+    )
+    fig_total.add_trace(
+        go.Scatter(
+            x=sample_df["timestamp"],
+            y=y_pred_total,
+            name="Predicted Total Generation",
+            line=dict(color="#F778BA", width=2.5, dash="dash"),
+        )
+    )
+    fig_total.update_layout(
+        title=dict(
+            text="<b>Total Energy Generation: Actual vs Predicted</b>",
+            font=dict(color="#FFF"),
+        ),
+        xaxis=dict(gridcolor="#21262D", color="#C9D1D9"),
+        yaxis=dict(title="Total Power (kW)", gridcolor="#21262D", color="#C9D1D9"),
+        plot_bgcolor="#0D1117",
+        paper_bgcolor="#161B22",
+        hovermode="x unified",
+        legend=dict(orientation="h", y=1.04, x=1, xanchor="right"),
+        margin=dict(l=30, r=20, t=50, b=30),
+        height=380,
+    )
+    return fig_total
 
 
 def create_environmental_gauges(reading: Dict[str, Any]) -> List[go.Figure]:
@@ -855,12 +901,20 @@ def create_environmental_gauges(reading: Dict[str, Any]) -> List[go.Figure]:
     return figures
 
 
-def create_energy_analytics_charts(df: pd.DataFrame) -> Tuple[go.Figure, go.Figure, go.Figure]:
+def create_energy_analytics_charts(
+    df: pd.DataFrame,
+    pv_pred_col: str = None,
+    wind_pred_col: str = None,
+) -> Tuple[go.Figure, go.Figure, go.Figure]:
     """
     Renders Section 21 Energy Analytics:
-    1. Daily energy generation bar chart (kWh)
+    1. Daily energy generation bar chart (kWh), with optional predicted overlay
     2. PV vs Wind energy share donut chart
-    3. 24-hour diurnal generation curves
+    3. 24-hour diurnal generation curves, with optional predicted overlay
+
+    pv_pred_col / wind_pred_col: optional column names in df holding model-predicted
+    PV / Wind power (kW). When provided, predicted lines are overlaid on the
+    daily and diurnal charts alongside the actual data for visual comparison.
     """
     # 1. Compute Daily Energy (kWh = sum of kW * step_hours)
     daily_df = df.copy()
@@ -873,11 +927,18 @@ def create_energy_analytics_charts(df: pd.DataFrame) -> Tuple[go.Figure, go.Figu
             step_hours = 1.0
 
     daily_df["date"] = daily_df["timestamp"].dt.date
-    daily_energy = daily_df.groupby("date").agg(
-        pv_kwh=("pv_power", lambda x: float(x.sum() * step_hours)),
-        wind_kwh=("wind_power", lambda x: float(x.sum() * step_hours)),
-        total_kwh=("total_power", lambda x: float(x.sum() * step_hours)),
-    ).reset_index()
+    agg_map = {
+        "pv_kwh": ("pv_power", lambda x: float(x.sum() * step_hours)),
+        "wind_kwh": ("wind_power", lambda x: float(x.sum() * step_hours)),
+        "total_kwh": ("total_power", lambda x: float(x.sum() * step_hours)),
+    }
+    if pv_pred_col and pv_pred_col in daily_df.columns:
+        agg_map["pv_pred_kwh"] = (pv_pred_col, lambda x: float(x.sum() * step_hours))
+    if wind_pred_col and wind_pred_col in daily_df.columns:
+        agg_map["wind_pred_kwh"] = (wind_pred_col, lambda x: float(x.sum() * step_hours))
+    daily_energy = daily_df.groupby("date").agg(**agg_map).reset_index()
+    if "pv_pred_kwh" in daily_energy.columns or "wind_pred_kwh" in daily_energy.columns:
+        daily_energy["total_pred_kwh"] = daily_energy.get("pv_pred_kwh", 0) + daily_energy.get("wind_pred_kwh", 0)
 
     # Daily Bar Chart (last 30 days)
     recent_daily = daily_energy.tail(30)
@@ -898,6 +959,17 @@ def create_energy_analytics_charts(df: pd.DataFrame) -> Tuple[go.Figure, go.Figu
             marker_color=COLOR_WIND,
         )
     )
+    if "total_pred_kwh" in recent_daily.columns:
+        fig_daily.add_trace(
+            go.Scatter(
+                x=recent_daily["date"],
+                y=recent_daily["total_pred_kwh"],
+                name="XGBoost Predicted Total (kWh)",
+                mode="lines+markers",
+                line=dict(color="#F778BA", width=2.5, dash="dash"),
+                marker=dict(size=6),
+            )
+        )
     fig_daily.update_layout(
         barmode="stack",
         title=dict(text="<b>Daily Renewable Energy Production (Last 30 Days)</b>", font=dict(color="#FFF")),
@@ -936,11 +1008,16 @@ def create_energy_analytics_charts(df: pd.DataFrame) -> Tuple[go.Figure, go.Figu
     # 3. 24-Hour Diurnal Generation Curve (Average kW by hour of day)
     hourly_df = df.copy()
     hourly_df["hour"] = hourly_df["timestamp"].dt.hour
-    diurnal_profile = hourly_df.groupby("hour").agg(
-        pv_avg=("pv_power", "mean"),
-        wind_avg=("wind_power", "mean"),
-        total_avg=("total_power", "mean"),
-    ).reset_index()
+    diurnal_agg_map = {
+        "pv_avg": ("pv_power", "mean"),
+        "wind_avg": ("wind_power", "mean"),
+        "total_avg": ("total_power", "mean"),
+    }
+    if pv_pred_col and pv_pred_col in hourly_df.columns:
+        diurnal_agg_map["pv_pred_avg"] = (pv_pred_col, "mean")
+    if wind_pred_col and wind_pred_col in hourly_df.columns:
+        diurnal_agg_map["wind_pred_avg"] = (wind_pred_col, "mean")
+    diurnal_profile = hourly_df.groupby("hour").agg(**diurnal_agg_map).reset_index()
 
     fig_diurnal = go.Figure()
     fig_diurnal.add_trace(
@@ -970,6 +1047,28 @@ def create_energy_analytics_charts(df: pd.DataFrame) -> Tuple[go.Figure, go.Figu
             line=dict(color=COLOR_TOTAL, width=3),
         )
     )
+    if "pv_pred_avg" in diurnal_profile.columns:
+        fig_diurnal.add_trace(
+            go.Scatter(
+                x=diurnal_profile["hour"],
+                y=diurnal_profile["pv_pred_avg"],
+                mode="lines+markers",
+                name="Predicted Avg Solar PV",
+                line=dict(color=COLOR_PV, width=2, dash="dash"),
+                marker=dict(size=5, symbol="diamond"),
+            )
+        )
+    if "wind_pred_avg" in diurnal_profile.columns:
+        fig_diurnal.add_trace(
+            go.Scatter(
+                x=diurnal_profile["hour"],
+                y=diurnal_profile["wind_pred_avg"],
+                mode="lines+markers",
+                name="Predicted Avg Wind",
+                line=dict(color=COLOR_WIND, width=2, dash="dash"),
+                marker=dict(size=5, symbol="diamond"),
+            )
+        )
     fig_diurnal.update_layout(
         title=dict(text="<b>Average 24-Hour Diurnal Generation Profile</b>", font=dict(color="#FFF")),
         xaxis=dict(title="Hour of Day (00:00 - 23:00)", tickmode="linear", tick0=0, dtick=2, gridcolor="#21262D", color="#C9D1D9"),

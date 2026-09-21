@@ -540,7 +540,23 @@ def main():
         )
 
         # High-level metrics
-        raw_df_selected = render_date_range_picker(raw_df, key_prefix="ea")
+        # Use feat_df (not raw_df) since it carries the engineered feature
+        # columns needed to run pv_model/wind_model predictions for the overlay.
+        raw_df_selected = render_date_range_picker(feat_df, key_prefix="ea")
+
+        show_predictions = st.checkbox(
+            "Overlay XGBoost Predicted Generation", value=True, key="ea_show_pred"
+        )
+        pv_pred_col, wind_pred_col = None, None
+        if show_predictions:
+            raw_df_selected = raw_df_selected.copy()
+            raw_df_selected["pv_power_pred"] = pv_model.predict(
+                raw_df_selected[PV_FEATURE_COLS]
+            ).clip(min=0)
+            raw_df_selected["wind_power_pred"] = wind_model.predict(
+                raw_df_selected[WIND_FEATURE_COLS]
+            ).clip(min=0)
+            pv_pred_col, wind_pred_col = "pv_power_pred", "wind_power_pred"
 
         if len(raw_df_selected) > 1:
             step_hours = (raw_df_selected["timestamp"].iloc[1] - raw_df_selected["timestamp"].iloc[0]).total_seconds() / 3600.0
@@ -565,8 +581,46 @@ def main():
         with m4:
             st.metric("Peak Power Recorded", f"{max_power:.2f} kW", f"Avg: {avg_power:.2f} kW")
 
+        # Second row: predicted numeric totals (mirrors the actual-value row above)
+        if show_predictions:
+            tot_pv_pred_kwh = float(raw_df_selected["pv_power_pred"].sum() * step_hours)
+            tot_wind_pred_kwh = float(raw_df_selected["wind_power_pred"].sum() * step_hours)
+            tot_pred_kwh = tot_pv_pred_kwh + tot_wind_pred_kwh
+            pv_diff_pct = ((tot_pv_pred_kwh - tot_pv_kwh) / tot_pv_kwh * 100) if tot_pv_kwh > 0 else 0.0
+            wind_diff_pct = ((tot_wind_pred_kwh - tot_wind_kwh) / tot_wind_kwh * 100) if tot_wind_kwh > 0 else 0.0
+            total_diff_pct = ((tot_pred_kwh - tot_kwh) / tot_kwh * 100) if tot_kwh > 0 else 0.0
+            mae_total = float(
+                (raw_df_selected["total_power"] - (raw_df_selected["pv_power_pred"] + raw_df_selected["wind_power_pred"]))
+                .abs()
+                .mean()
+            )
+
+            st.markdown(
+                "<div style='font-size: 0.78rem; color: #F778BA; font-weight: 700; "
+                "text-transform: uppercase; letter-spacing: 0.05em; margin: 10px 0 4px 0;'>"
+                "XGBoost Predicted (Model Output)</div>",
+                unsafe_allow_html=True,
+            )
+            p1, p2, p3, p4 = st.columns(4)
+            with p1:
+                st.metric(
+                    "Predicted Total Energy", f"{tot_pred_kwh:,.1f} kWh", f"{total_diff_pct:+.1f}% vs Actual"
+                )
+            with p2:
+                st.metric(
+                    "Predicted Solar PV", f"{tot_pv_pred_kwh:,.1f} kWh", f"{pv_diff_pct:+.1f}% vs Actual"
+                )
+            with p3:
+                st.metric(
+                    "Predicted Wind", f"{tot_wind_pred_kwh:,.1f} kWh", f"{wind_diff_pct:+.1f}% vs Actual"
+                )
+            with p4:
+                st.metric("Mean Absolute Error", f"{mae_total:.3f} kW", "Avg deviation per reading")
+
         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-        fig_daily, fig_donut, fig_diurnal = create_energy_analytics_charts(raw_df_selected)
+        fig_daily, fig_donut, fig_diurnal = create_energy_analytics_charts(
+            raw_df_selected, pv_pred_col=pv_pred_col, wind_pred_col=wind_pred_col
+        )
 
         c1, c2 = st.columns([2.3, 1.2])
         with c1:
@@ -690,16 +744,22 @@ def main():
         train_df, test_df = chronological_split(feat_df, train_ratio=0.8)
         st.markdown("### Select Date Range Within Test Set")
         test_df_selected = render_date_range_picker(test_df, key_prefix="mp")
-        fig_ts, fig_scatter, fig_resid = create_actual_vs_predicted_charts(
+        performance_charts = create_actual_vs_predicted_charts(
             test_df=test_df_selected,
             pv_model=pv_model,
             wind_model=wind_model,
             pv_features=PV_FEATURE_COLS,
             wind_features=WIND_FEATURE_COLS,
         )
+        fig_ts, fig_scatter, fig_resid = performance_charts[:3]
+        fig_total = performance_charts[3] if len(performance_charts) > 3 else None
 
         st.markdown("### Actual vs Predicted Evaluation (Section 17)")
         st.plotly_chart(fig_ts, use_container_width=True)
+        if fig_total is not None:
+            st.divider()
+            st.markdown("### Total Energy Generation: Actual vs Predicted")
+            st.plotly_chart(fig_total, use_container_width=True)
 
         c1, c2 = st.columns(2)
         with c1:

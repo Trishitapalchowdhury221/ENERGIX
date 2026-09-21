@@ -75,10 +75,10 @@ def run_all_tests():
     fig_fc = create_forecast_chart(df_history, fc_sample, 6)
     assert fig_fc is not None
 
-    fig_ts, fig_sc, fig_res = create_actual_vs_predicted_charts(
+    fig_ts, fig_sc, fig_res, fig_total = create_actual_vs_predicted_charts(
         test_df, pv_model, wind_model, PV_FEATURE_COLS, WIND_FEATURE_COLS
     )
-    assert fig_ts is not None and fig_sc is not None and fig_res is not None
+    assert all(fig is not None for fig in (fig_ts, fig_sc, fig_res, fig_total))
 
     gauges = create_environmental_gauges(curr_reading)
     assert len(gauges) == 3
