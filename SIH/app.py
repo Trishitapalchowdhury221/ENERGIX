@@ -67,8 +67,12 @@ def bootstrap_system():
     """
     Automatic setup: ensures dataset and models are trained and loaded cleanly.
     """
-    data_file = Path("data/renewable_data.csv")
-    models_dir = Path("models")
+    # Always resolve paths relative to this script's own location,
+    # not the current working directory (fixes deployment path issues
+    # regardless of how deep app.py sits in the repo folder structure).
+    BASE_DIR = Path(__file__).resolve().parent
+    data_file = BASE_DIR / "data" / "renewable_data.csv"
+    models_dir = BASE_DIR / "models"
     pv_pkl = models_dir / "pv_model.pkl"
     wind_pkl = models_dir / "wind_model.pkl"
 
